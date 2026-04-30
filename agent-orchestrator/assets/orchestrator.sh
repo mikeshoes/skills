@@ -33,7 +33,8 @@ EOF
 is_valid_nonpm() { echo "$VALID_NONPM" | grep -qw "$1"; }
 
 role_pid_live() {
-  local pid=$(cat ".run/comms_$1_watch.pid" 2>/dev/null)
+  local pid
+  pid=$(cat ".run/comms_$1_watch.pid" 2>/dev/null)
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
