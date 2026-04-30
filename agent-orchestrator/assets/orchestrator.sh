@@ -46,6 +46,7 @@ role_pane_alive() {
   [ -n "$pane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$pane"
 }
 
+# shellcheck source=/dev/null
 read_conf() { [ -f "$CONF" ] && . "$CONF"; }
 
 # 自适应布局，PM 永远占主导：
@@ -77,7 +78,8 @@ EOF
 spawn_role() {
   local role="$1"
   # -P 打印新 pane id；-d 不切焦
-  local new_pane=$(tmux split-window -t "$SESSION" -P -F '#{pane_id}' -d 'claude')
+  local new_pane
+  new_pane=$(tmux split-window -t "$SESSION" -P -F '#{pane_id}' -d 'claude')
   echo "$new_pane" > ".run/role_pane_$role"
 
   # 设 pane title 为大写 role 名（PM/BE/FE/QA）—— 用户 tmux pane-border-format 含 #{pane_title} 时显示
@@ -87,7 +89,8 @@ spawn_role() {
   local ready=0
   for _ in 1 2 3 4 5 6; do
     sleep 2
-    local out=$(tmux capture-pane -t "$new_pane" -p 2>/dev/null | tail -3)
+    local out
+    out=$(tmux capture-pane -t "$new_pane" -p 2>/dev/null | tail -3)
     if echo "$out" | grep -qE '>|claude'; then
       ready=1; break
     fi
@@ -151,8 +154,10 @@ do_status() {
   printf "%-4s %-8s %-8s %s\n" "role" "pane" "pid" "status"
   local all_online=1
   for role in $EXPECTED; do
-    local pane=$(cat ".run/role_pane_$role" 2>/dev/null || echo "-")
-    local pid=$(cat ".run/comms_${role}_watch.pid" 2>/dev/null || echo "-")
+    local pane
+    pane=$(cat ".run/role_pane_$role" 2>/dev/null || echo "-")
+    local pid
+    pid=$(cat ".run/comms_${role}_watch.pid" 2>/dev/null || echo "-")
     local status
     if [ "$role" = "pm" ]; then
       status="online (当前 pane)"
@@ -179,8 +184,10 @@ do_status() {
 
 stop_role() {
   local role="$1"
-  local pane=$(cat ".run/role_pane_$role" 2>/dev/null)
-  local pid=$(cat ".run/comms_${role}_watch.pid" 2>/dev/null)
+  local pane
+  pane=$(cat ".run/role_pane_$role" 2>/dev/null)
+  local pid
+  pid=$(cat ".run/comms_${role}_watch.pid" 2>/dev/null)
 
   if [ -n "$pane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$pane"; then
     tmux send-keys -t "$pane" '/exit' Enter 2>/dev/null || true
