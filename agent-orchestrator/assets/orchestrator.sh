@@ -41,7 +41,8 @@ role_pid_live() {
 role_ready() { [ -f ".run/role_ready_$1" ]; }
 
 role_pane_alive() {
-  local pane=$(cat ".run/role_pane_$1" 2>/dev/null)
+  local pane
+  pane=$(cat ".run/role_pane_$1" 2>/dev/null)
   [ -n "$pane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$pane"
 }
 
