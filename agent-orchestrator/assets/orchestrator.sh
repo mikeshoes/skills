@@ -43,7 +43,7 @@ role_ready() { [ -f ".run/role_ready_$1" ]; }
 role_pane_alive() {
   local pane
   pane=$(cat ".run/role_pane_$1" 2>/dev/null)
-  [ -n "$pane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$pane"
+  [ -n "$pane" ] && tmux list-panes -t "$SESSION" -F '#{pane_id}' 2>/dev/null | grep -qx "$pane"
 }
 
 # shellcheck source=/dev/null
@@ -79,7 +79,7 @@ spawn_role() {
   local role="$1"
   # -P 打印新 pane id；-d 不切焦
   local new_pane
-  new_pane=$(tmux split-window -t "$SESSION" -P -F '#{pane_id}' -d 'claude')
+  new_pane=$(tmux split-window -t "$SESSION" -P -F '#{pane_id}' -d -c "$PROJECT_ROOT" 'claude')
   echo "$new_pane" > ".run/role_pane_$role"
 
   # 设 pane title 为大写 role 名（PM/BE/FE/QA）—— 用户 tmux pane-border-format 含 #{pane_title} 时显示
