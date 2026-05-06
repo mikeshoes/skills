@@ -7,6 +7,7 @@ Claude Code skills monorepo by [@mikeshoes](https://github.com/mikeshoes).
 | Skill | Description |
 |---|---|
 | [`agent-orchestrator/`](agent-orchestrator/) | Multi-role (PM/BE/FE/QA) tmux orchestration with a file-based comms protocol |
+| [`project-anchor/`](project-anchor/) | Anti-drift mechanism: north-star anchor, periodic drift audit, formal pivot ceremony |
 
 ## Install one skill
 
