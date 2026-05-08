@@ -44,6 +44,43 @@ PERMISSIONS_ALLOW = [
     "Bash(git status:*)",
 ]
 
+# 永久 deny 列表（永不随 revoke 移除）
+# 用于 be/fe 的 acceptEdits 模式 + pm/qa 的 default 模式都生效；多一层显式 guardrail
+# bypassPermissions 模式会跳过整个权限层，本列表对它无效
+PERMISSIONS_DENY = [
+    "Bash(sudo:*)",
+    "Bash(git push --force:*)",
+    "Bash(git push -f:*)",
+]
+
+# 永久 allow 列表（永不随 revoke 移除）
+# 写入项目级 .claude/settings.local.json，让 be/fe 在 acceptEdits 模式下不被 dev 命令打断
+# 这是项目级配置，跨项目不污染；相比 auto 模式无 opt-in 全局写入风险
+# 项目特殊命令用户可自行 append 到 settings.local.json，本列表只覆盖通用 dev 命令
+PERMISSIONS_PERMANENT_ALLOW = [
+    # 版本控制（force push 已在 deny；其他 git 子命令全放）
+    "Bash(git:*)",
+    # JS / Node 生态
+    "Bash(npm:*)",
+    "Bash(yarn:*)",
+    "Bash(pnpm:*)",
+    "Bash(node:*)",
+    "Bash(npx:*)",
+    # Python 生态
+    "Bash(python:*)",
+    "Bash(python3:*)",
+    "Bash(pip:*)",
+    "Bash(pip3:*)",
+    "Bash(pytest:*)",
+    "Bash(uv:*)",
+    "Bash(poetry:*)",
+    # 构建 / 通用
+    "Bash(make:*)",
+    "Bash(find:*)",
+    "Bash(rg:*)",
+    "Bash(jq:*)",
+]
+
 SETTINGS = pathlib.Path(".claude/settings.local.json")
 HOLDER_DIR = pathlib.Path(".run/perms_holders")
 LOCKDIR = pathlib.Path(".run/orchestrator_perms.lock.d")
@@ -134,6 +171,31 @@ def merge_permissions(cfg: dict) -> list[str]:
     allow = perms.setdefault("allow", [])
     added: list[str] = []
     for p in PERMISSIONS_ALLOW:
+        if p not in allow:
+            allow.append(p)
+            added.append(p)
+    return added
+
+
+def merge_deny(cfg: dict) -> list[str]:
+    """永久 deny 规则，不随 revoke 移除。每次 install 幂等补齐缺失项。"""
+    perms = cfg.setdefault("permissions", {})
+    deny = perms.setdefault("deny", [])
+    added: list[str] = []
+    for p in PERMISSIONS_DENY:
+        if p not in deny:
+            deny.append(p)
+            added.append(p)
+    return added
+
+
+def merge_permanent_allow(cfg: dict) -> list[str]:
+    """永久 allow 规则（dev 命令），不随 revoke 移除。每次 install 幂等补齐缺失项。
+    跟 PERMISSIONS_ALLOW 共存于 cfg.permissions.allow，但 remove_permissions 不动它。"""
+    perms = cfg.setdefault("permissions", {})
+    allow = perms.setdefault("allow", [])
+    added: list[str] = []
+    for p in PERMISSIONS_PERMANENT_ALLOW:
         if p not in allow:
             allow.append(p)
             added.append(p)
@@ -308,20 +370,28 @@ def cmd_install() -> int:
         cfg = load_cfg()
         hook_added = merge_hook(cfg)
         perms_added = merge_permissions(cfg)
-        if hook_added or perms_added:
+        deny_added = merge_deny(cfg)
+        perm_allow_added = merge_permanent_allow(cfg)
+        if hook_added or perms_added or deny_added or perm_allow_added:
             save_cfg(cfg)
         n = holder_count()
         l3_status, l3_path = merge_l3_memory()
         rp_new, rp_updated = deploy_role_packs_to_l3()
-        return hook_added, perms_added, n, pane, was_new, dead, l3_status, l3_path, rp_new, rp_updated
+        return (hook_added, perms_added, deny_added, perm_allow_added,
+                n, pane, was_new, dead, l3_status, l3_path, rp_new, rp_updated)
 
-    hook_added, perms_added, n, pane, was_new, dead, l3_status, l3_path, rp_new, rp_updated = with_lock(action)
+    (hook_added, perms_added, deny_added, perm_allow_added,
+     n, pane, was_new, dead, l3_status, l3_path, rp_new, rp_updated) = with_lock(action)
     parts = [
         "hook 新建" if hook_added else "hook 已存在",
         f"权限 +{len(perms_added)}" if perms_added else "权限 已齐",
         f"holder={pane}({'new' if was_new else 'existing'})",
         f"active={n}",
     ]
+    if deny_added:
+        parts.append(f"deny +{len(deny_added)}")
+    if perm_allow_added:
+        parts.append(f"dev allow +{len(perm_allow_added)}")
     l3_label = {
         "new": "L3 协议核心 已注入",
         "updated": "L3 协议核心 已更新",

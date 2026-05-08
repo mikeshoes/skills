@@ -75,11 +75,38 @@ EOF
 
 # ---------- spawn ----------
 
+# be/fe 是执行型角色（不等用户 ack），spawn 时进 acceptEdits 权限模式：
+#   - 文件 Read/Write/Edit + 简单 fs bash（mkdir/touch/mv/cp/rm/sed）自动 ack
+#   - dev 命令（git/npm/python/pytest 等）由 install_config.py 写入项目级 allow 列表自动 ack
+#   - 危险命令（sudo / git push -f）仍由 deny 列表硬拦
+#   - **零全局写入风险**：acceptEdits 无 opt-in 机制，不会触发 Claude Code 自动写 ~/.claude/settings.json
+#   - 用户可通过 AGENT_PANE_PERMISSION env 覆盖（default / acceptEdits / bypassPermissions / auto）
+#   - 历史：曾默认 auto，发现 auto opt-in 接受会被 Claude Code 写到全局 settings；2026-05-08 改 acceptEdits
+#
+# qa 是协同型，spawn 时**显式传 default**：
+#   - 用户全局 ~/.claude/settings.json 可能设了 defaultMode=auto，新 claude session 会继承
+#   - qa 必须每个工具问用户 → 显式 --permission-mode default 覆盖全局
+#   - AGENT_QA_PERMISSION env 可改（罕见场景，比如用户主动想让 qa 跑 auto）
+permission_mode_for() {
+  local role="$1"
+  case "$role" in
+    be|fe) echo "${AGENT_PANE_PERMISSION:-acceptEdits}" ;;
+    qa)    echo "${AGENT_QA_PERMISSION:-default}" ;;
+    *)     echo "" ;;  # 未知角色（不会到这）
+  esac
+}
+
 spawn_role() {
   local role="$1"
+  local pmode
+  pmode=$(permission_mode_for "$role")
+
+  local claude_cmd='claude'
+  [ -n "$pmode" ] && claude_cmd="claude --permission-mode $pmode"
+
   # -P 打印新 pane id；-d 不切焦
   local new_pane
-  new_pane=$(tmux split-window -t "$SESSION" -P -F '#{pane_id}' -d -c "$PROJECT_ROOT" 'claude')
+  new_pane=$(tmux split-window -t "$SESSION" -P -F '#{pane_id}' -d -c "$PROJECT_ROOT" "$claude_cmd")
   echo "$new_pane" > ".run/role_pane_$role"
 
   # 设 pane title 为大写 role 名（PM/BE/FE/QA）—— 用户 tmux pane-border-format 含 #{pane_title} 时显示
@@ -127,6 +154,21 @@ do_start() {
 
   echo "✅ orchestrator 启动：session=$SESSION · pm=$PM_PANE"
   echo "已 spawn：$(echo "$EXPECTED" | sed 's/pm //')"
+  # 提示子 pane 的权限模式
+  local befe_spawned qa_spawned
+  befe_spawned=$(echo "$EXPECTED" | tr ' ' '\n' | grep -E '^(be|fe)$' | tr '\n' ' ' | sed 's/ $//')
+  qa_spawned=$(echo "$EXPECTED" | tr ' ' '\n' | grep -E '^qa$' | tr '\n' ' ' | sed 's/ $//')
+  if [ -n "$befe_spawned" ]; then
+    local mode_for_befe
+    mode_for_befe="${AGENT_PANE_PERMISSION:-acceptEdits}"
+    echo "🔓 be/fe 权限模式：$mode_for_befe（dev 命令 allow 列表见 .claude/settings.local.json）"
+    [ "$mode_for_befe" = "auto" ] && echo "   ⚠️  首次进 auto 接受 opt-in 会被 Claude Code 写到 ~/.claude/settings.json 全局"
+  fi
+  if [ -n "$qa_spawned" ]; then
+    local mode_for_qa
+    mode_for_qa="${AGENT_QA_PERMISSION:-default}"
+    echo "🔒 qa 权限模式：$mode_for_qa（显式 override 全局 defaultMode；想让 qa 也 auto 可 export AGENT_QA_PERMISSION=auto）"
+  fi
   echo "切换 pane：Ctrl-b o  或  Ctrl-b 数字"
   echo "查状态：bash .run/orchestrator.sh status"
 }
@@ -144,7 +186,14 @@ do_add() {
   spawn_role "$role"
   EXPECTED="$EXPECTED $role"
   save_conf
-  echo "✅ $role 已 spawn"
+  local pmode_added
+  pmode_added=$(permission_mode_for "$role")
+  if [ -n "$pmode_added" ]; then
+    echo "✅ $role 已 spawn（权限模式：$pmode_added）"
+    [ "$pmode_added" = "auto" ] && echo "   ⚠️  接受 auto opt-in 会被 Claude Code 写到 ~/.claude/settings.json 全局"
+  else
+    echo "✅ $role 已 spawn"
+  fi
 }
 
 do_status() {

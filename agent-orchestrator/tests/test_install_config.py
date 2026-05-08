@@ -88,6 +88,34 @@ def test_remove_permissions_preserves_user_entries(project):
     assert cfg["permissions"]["allow"] == ["Bash(custom:*)"]
 
 
+def test_merge_permanent_allow_idempotent(project):
+    cfg = {}
+    added = ic.merge_permanent_allow(cfg)
+    assert len(added) == len(ic.PERMISSIONS_PERMANENT_ALLOW)
+    # 二次调用不重复
+    assert ic.merge_permanent_allow(cfg) == []
+
+
+def test_remove_permissions_keeps_permanent_allow(project):
+    cfg = {}
+    ic.merge_permissions(cfg)
+    ic.merge_permanent_allow(cfg)
+    ic.remove_permissions(cfg)
+    # bootstrap allow 全清
+    for p in ic.PERMISSIONS_ALLOW:
+        assert p not in cfg["permissions"]["allow"]
+    # permanent allow 留下
+    for p in ic.PERMISSIONS_PERMANENT_ALLOW:
+        assert p in cfg["permissions"]["allow"]
+
+
+def test_merge_deny_idempotent(project):
+    cfg = {}
+    added = ic.merge_deny(cfg)
+    assert len(added) == len(ic.PERMISSIONS_DENY)
+    assert ic.merge_deny(cfg) == []
+
+
 # ---- holder lifecycle ----
 
 def test_install_creates_holder_and_perms(project, monkeypatch):
@@ -105,9 +133,17 @@ def test_revoke_clears_perms_when_last_holder(project, monkeypatch):
     _argv(monkeypatch, "revoke", "%pane1")
     ic.cmd_revoke()
     cfg = json.loads(ic.SETTINGS.read_text())
-    # Hook stays, permissions go
+    # Hook stays
     assert "PreCompact" in cfg.get("hooks", {})
-    assert "permissions" not in cfg or not cfg["permissions"].get("allow")
+    # Bootstrap allow 全清；permanent allow + deny 留下
+    remaining_allow = cfg.get("permissions", {}).get("allow", [])
+    for p in ic.PERMISSIONS_ALLOW:
+        assert p not in remaining_allow, f"bootstrap perm {p} should be revoked"
+    for p in ic.PERMISSIONS_PERMANENT_ALLOW:
+        assert p in remaining_allow, f"permanent dev allow {p} should remain"
+    remaining_deny = cfg.get("permissions", {}).get("deny", [])
+    for p in ic.PERMISSIONS_DENY:
+        assert p in remaining_deny, f"permanent deny {p} should remain"
 
 
 def test_revoke_keeps_perms_with_other_holder(project, monkeypatch):
@@ -120,12 +156,20 @@ def test_revoke_keeps_perms_with_other_holder(project, monkeypatch):
     _argv(monkeypatch, "revoke", "%pane1")
     ic.cmd_revoke()
     cfg = json.loads(ic.SETTINGS.read_text())
+    # 还有 holder 时 bootstrap perms 也保留
     assert cfg["permissions"]["allow"], "perms should remain while pane2 holds"
+    # 至少含一项 bootstrap perm（证明 bootstrap allow 还在）
+    assert any(p in cfg["permissions"]["allow"] for p in ic.PERMISSIONS_ALLOW)
 
     _argv(monkeypatch, "revoke", "%pane2")
     ic.cmd_revoke()
     cfg = json.loads(ic.SETTINGS.read_text())
-    assert "permissions" not in cfg or not cfg["permissions"].get("allow")
+    # 最后一个 holder 走后 bootstrap allow 应清光，permanent allow 留下
+    remaining_allow = cfg.get("permissions", {}).get("allow", [])
+    for p in ic.PERMISSIONS_ALLOW:
+        assert p not in remaining_allow
+    for p in ic.PERMISSIONS_PERMANENT_ALLOW:
+        assert p in remaining_allow
 
 
 def test_install_idempotent_same_pane(project, monkeypatch):
