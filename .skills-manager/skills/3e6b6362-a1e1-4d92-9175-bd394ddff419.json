@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "3e6b6362-a1e1-4d92-9175-bd394ddff419",
+  "path": "project-anchor",
+  "path_key": "project-anchor",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "import",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}

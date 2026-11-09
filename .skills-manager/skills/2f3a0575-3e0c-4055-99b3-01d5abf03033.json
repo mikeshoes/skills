@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "2f3a0575-3e0c-4055-99b3-01d5abf03033",
+  "path": "agent-orchestrator",
+  "path_key": "agent-orchestrator",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "import",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}
